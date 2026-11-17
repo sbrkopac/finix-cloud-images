@@ -1,0 +1,6 @@
+*.img
+*.img.gz
+*.raw
+*.qcow2
+result
+result-*

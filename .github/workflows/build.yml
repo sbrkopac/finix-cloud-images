@@ -1,0 +1,64 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - flake/**
+      - scripts/**
+      - .github/workflows/build.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secret gate
+        run: bash scripts/secret-gate.sh
+
+      - name: Script syntax
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+
+      - name: Build tools
+        run: sudo apt-get install -y --no-install-recommends dosfstools e2fsprogs fdisk zstd
+
+      - uses: cachix/install-nix-action@v31
+
+      # Optional. Set the repository variable SSH_AUTHORIZED_KEYS to bake keys
+      # into the image as well as fetching them from the metadata service.
+      - name: Bake in SSH keys
+        if: vars.SSH_AUTHORIZED_KEYS != ''
+        env:
+          KEYS: ${{ vars.SSH_AUTHORIZED_KEYS }}
+        run: printf '%s\n' "$KEYS" > flake/finix/authorized_keys
+
+      - name: Build and verify the image
+        run: sudo env "PATH=$PATH" IMG="$RUNNER_TEMP/finix.img" bash scripts/build.sh
+
+      - name: Compress
+        run: |
+          cd "$RUNNER_TEMP"
+          sudo chown "$USER" finix.img
+          gzip -9 finix.img
+          sha256sum finix.img.gz | tee finix.img.gz.sha256
+          ls -l finix.img.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finix-image
+          path: |
+            ${{ runner.temp }}/finix.img.gz
+            ${{ runner.temp }}/finix.img.gz.sha256
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
