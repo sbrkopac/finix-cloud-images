@@ -34,6 +34,13 @@ newtmp() {
   printf -v "$1" '%s' "$t"
 }
 
+# Entries in /etc are symlinks with absolute targets such as /etc/static/...,
+# which resolve against the build host's root when followed from outside. Read
+# them from inside the image instead.
+target_read() { # path inside the image, file to write it to
+  chroot "$MNT" "$PROFILE/sw/bin/cat" "$1" > "$2" 2>/dev/null
+}
+
 preflight
 guard_mounted
 guard_uuids
@@ -58,14 +65,12 @@ check "/etc/ssh exists" [ -d "$MNT/etc/ssh" ]
 echo
 
 echo "--- SSH keys: fetched at boot ---"
-# Naming the file directly follows the symlink into the store. `grep -r` on the
-# directory would not.
-TASK=$MNT/etc/finit.d/cloud-ssh-keys.conf
-if [ -e "$TASK" ]; then
+newtmp TASK
+if target_read /etc/finit.d/cloud-ssh-keys.conf "$TASK"; then
   cat "$TASK"; echo
   check "the cloud-ssh-keys task is registered" grep -q 'name:cloud-ssh-keys' "$TASK"
 else
-  vfail "$TASK missing, nothing will fetch a key at boot"
+  vfail "/etc/finit.d/cloud-ssh-keys.conf missing, nothing will fetch a key at boot"
 fi
 echo
 
@@ -136,7 +141,7 @@ echo
 # sshd is first-match-wins per keyword, the opposite of sudoers, so assert on
 # the first occurrence.
 echo "--- sshd auth policy ---"
-SSHD=$MNT/etc/ssh/sshd_config
+newtmp SSHD
 sshd_first() { # keyword -> the rest of its first line
   awk -v k="$1" 'tolower($1) == tolower(k) { $1 = ""; sub(/^ /, ""); print; exit }' "$SSHD"
 }
@@ -144,14 +149,14 @@ sshd_assert() { # keyword, expected value
   local got; got=$(sshd_first "$1")
   check "sshd $1 is '$2' (got '${got:-unset}')" [ "$got" = "$2" ]
 }
-if [ -e "$SSHD" ]; then
+if target_read /etc/ssh/sshd_config "$SSHD"; then
   sshd_assert PasswordAuthentication no
   sshd_assert PermitRootLogin no
   # AuthorizedKeysFile replaces sshd's default list, so these paths are the only
   # places a key is read from.
   sshd_assert AuthorizedKeysFile "/etc/ssh/authorized_keys.d/%u /var/lib/cloud-ssh-keys/%u"
 else
-  vfail "$SSHD does not exist"
+  vfail "/etc/ssh/sshd_config does not exist"
 fi
 echo
 
@@ -200,11 +205,11 @@ fi
 echo
 
 echo "--- grow-root task ---"
-GROW=$MNT/etc/finit.d/grow-root.conf
-if [ -e "$GROW" ]; then
+newtmp GROW
+if target_read /etc/finit.d/grow-root.conf "$GROW"; then
   check "the grow-root task is registered" grep -q 'name:grow-root' "$GROW"
 else
-  vfail "$GROW missing"
+  vfail "/etc/finit.d/grow-root.conf missing"
 fi
 echo
 
