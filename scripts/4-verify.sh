@@ -41,6 +41,11 @@ target_read() { # path inside the image, file to write it to
   chroot "$MNT" "$PROFILE/sw/bin/cat" "$1" > "$2" 2>/dev/null
 }
 
+# finit 5 writes `task NAME {`; finit 4 wrote `task ... name:NAME ...`.
+declares_task() { # task name, finit config file
+  grep -Eq "^task $1 \{|^task .*name:$1( |$)" "$2"
+}
+
 preflight
 guard_mounted
 guard_uuids
@@ -68,7 +73,7 @@ echo "--- SSH keys: fetched at boot ---"
 newtmp TASK
 if target_read /etc/finit.d/cloud-ssh-keys.conf "$TASK"; then
   cat "$TASK"; echo
-  check "the cloud-ssh-keys task is registered" grep -q 'name:cloud-ssh-keys' "$TASK"
+  check "the cloud-ssh-keys task is registered" declares_task cloud-ssh-keys "$TASK"
 else
   vfail "/etc/finit.d/cloud-ssh-keys.conf missing, nothing will fetch a key at boot"
 fi
@@ -207,7 +212,7 @@ echo
 echo "--- grow-root task ---"
 newtmp GROW
 if target_read /etc/finit.d/grow-root.conf "$GROW"; then
-  check "the grow-root task is registered" grep -q 'name:grow-root' "$GROW"
+  check "the grow-root task is registered" declares_task grow-root "$GROW"
 else
   vfail "/etc/finit.d/grow-root.conf missing"
 fi
