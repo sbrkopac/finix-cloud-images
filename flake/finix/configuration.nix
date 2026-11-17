@@ -151,6 +151,10 @@ in
       };
     };
 
+    # Not enabled by default since finix 2026-08-29; finix refuses a system
+    # with no tty.
+    getty.enable = true;
+
     polkit.enable = true;
 
     sysklogd.enable = true;
