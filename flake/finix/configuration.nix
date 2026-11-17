@@ -124,19 +124,15 @@ in
     bash.enable = true;
   };
 
-  # Passwordless sudo for wheel. The account has no password, so without this
-  # sudo would prompt for one that cannot exist. finix has no
-  # security.sudo.wheelNeedsPassword; this renders
-  # `%wheel ALL = (root) NOPASSWD: ALL` into sudoers.
-  providers.privileges = {
-    rules = [
-      {
-        groups = [ "wheel" ];
-        command = "ALL";
-        requirePassword = false;
-      }
-    ];
-  };
+  # Passwordless sudo for wheel, because the account has no password.
+  # - finix's sudo module has no option for it, and providers.privileges rules
+  #   are per command (an empty `args` renders as "no arguments")
+  # - sudoers is last-match-wins, so this must come after the module's own
+  #   `%wheel ALL=(ALL:ALL) SETENV: ALL`:
+  #   https://github.com/finix-community/finix/blob/49db7a849d08d3d626cb2a584cb96e7ea38881fa/modules/programs/sudo/default.nix#L74
+  environment.etc.sudoers.text = lib.mkOrder 2000 ''
+    %wheel ALL=(ALL:ALL) NOPASSWD: SETENV: ALL
+  '';
 
   services = {
     openssh = {
